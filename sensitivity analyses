@@ -15,8 +15,30 @@ main_psm_out_std <- lm(bioage15_att_std ~ gvh1600cat + bioage9_att_std + age_t5 
 coeftest(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass) 
 coefci(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass, level = 0.95) 
 
+# 3) distance-specific exposure counts (unstd.) 
+# 1600 unstd main exposure
+main_psm_out_unstd <- lm(bioage15_att_std ~ gvh1600count + bioage9_att_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
+                         data=matched_data_main, 
+                         weights = weights)
+coeftest(main_psm_out_unstd, vcov. = vcovCL, cluster = ~subclass) 
+coefci(main_psm_out_unstd, vcov. = vcovCL, cluster = ~subclass, level = 0.95) 
 
-### 3) adjust for concurrent Y15 violent crime as covariate ----
+# 1000m unstd alt exposure
+main_psm_out_std <- lm(bioage15_att_std ~ gvh1000count + bioage9_att_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
+                       data=matched_data_main, 
+                       weights = weights)
+coeftest(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass) 
+coefci(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass, level = 0.95) 
+
+# 500m unstd alt exposure
+main_psm_out_std <- lm(bioage15_att_std ~ gvh500count_att_std + bioage9_att_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
+                       data=matched_data_main, 
+                       weights = weights)
+coeftest(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass) 
+coefci(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass, level = 0.95) 
+
+
+### 4) adjust for concurrent Y15 violent crime as covariate ----
 # standardize Y15 VC rate within treated group 
 treated_idx <- matched_data_main$gvh1600_any == 1
 mean_treated <- wtd.mean(matched_data_main$vc_rate15[treated_idx], weights = matched_data_main$weights[treated_idx])
@@ -33,7 +55,7 @@ coefci(sens_psm_out_vcrate15, vcov. = vcovCL, cluster = ~subclass, level = 0.95)
 # vc_rate15_att_std: B=-0.0124026 (-0.0407022902, 0.0158970958)
 
 
-### 4) adjust concurrent Y15 crime rate as matching covariate ----
+### 5) adjust concurrent Y15 crime rate as matching covariate ----
 m.out.vc15 <- matchit(gvh1600_any ~ race + pov_t6 + hs_t6 + somcol_t6 + col_t6 + trct_pct_pov_t6 + pov_t5 + trct_pct_pov_t5 + vc_rate9 + vc_rate15, 
                       data = df_final_full, 
                       method = "full",
@@ -110,7 +132,7 @@ coefci(supp_psm_vc15, vcov. = vcovCL, cluster = ~subclass, level = 0.95)
 # gvh1600count_att_std: B=0.03955900 (0.0037292879, 0.075388721)
 
 
-### 5) restrict sample to participants with a full year of exposure data ----
+### 6) restrict sample to participants with a full year of exposure data ----
 # overall sample 
 df_final_1yr_dgv <- df_final_full %>% filter(atleast_1year_exposure == 1)
 out_1yr_full_list <- list(
@@ -172,7 +194,7 @@ num_observations_df <- data.frame(
   num_observations = num_observations)
 print(num_observations_df)
 
-# 6) match on y15 vc rates 
+# 7) match on y15 vc rates 
 # propensity score matching 
 m.out.1yr <- matchit(gvh1600_any ~ race + pov_t6 + hs_t6 + somcol_t6 + col_t6 + trct_pct_pov_t6 + pov_t5 + edu_t5 + trct_pct_pov_t5 + vc_rate9, 
                      data = df_final_1yr_dgv, 
@@ -250,7 +272,7 @@ coeftest(supp_psm_1yr, vcov. = vcovCL, cluster = ~subclass)
 coefci(supp_psm_1yr, vcov. = vcovCL, cluster = ~subclass, level = 0.95) 
 
 
-### 7) account for residential moves Y9-Y15 ----
+### 8) account for residential moves Y9-Y15 ----
 # note: due to missingness in residential moves we were unable to adjust for this in the matched sample weighted regression models
 # recreate summary scores in overall sample for those with non-missing mover/stayer data
 df_final_mover_stayer$grmpc15_std_mover <- scale(df_final_mover_stayer$grmpc15)
@@ -346,7 +368,7 @@ t.test(t_pov_dif ~ moved_tracts_9_15, data=test)              # no differences i
 t.test(vc_dif ~ moved_tracts_9_15, data=test)                 # movers experienced significantly greater reduction in violent crime rates from Y9 to Y15 than stayers 
 
 
-### 8) tests for measurement invaraince in biological aging summary scores ----
+### 9) tests for measurement invaraince in biological aging summary scores ----
 df_invar_test <- matched_data_main %>% 
   dplyr::select(idnum, grmpc15_att_std, phepc15_att_std, pce15_att_std, grmpc9_att_std, phepc9_att_std, pce9_att_std, weights)
 
@@ -423,7 +445,7 @@ cmp <- compareFit(fit_configural, fit_metric, fit_scalar)
 summary(cmp)
 
 
-### 9) explore moderation by race/ethnicity for main exposure 
+### 10) explore moderation by race/ethnicity for main exposure 
 main_psm_out_count_race <- lm(bioage15_att_std ~ gvh1600count * race + bioage9_att_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
                               data=matched_data_main, 
                               weights = weights)
@@ -433,7 +455,7 @@ coefci(main_psm_out_count_race, vcov. = vcovCL, cluster = ~subclass, level = 0.9
 avg_comparisons(main_psm_out_count_race, variables = "gvh1600count",  vcov = ~subclass, newdata=subset(gvh1600count>0), by = "race") 
  
 
-### 10) predicted values for discussion interpretation 
+### 11) predicted values for discussion interpretation 
 # grimage: 0.181 years = 2.2 months difference between exposed and unexposed
 grm_predict <- lm(grmpc15 ~ gvh1600count + grmpc9 + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data=matched_data_main, weights = weights)
 grm_predict_coef <- coeftest(grm_predict, vcov. = vcovCL, cluster = ~subclass)["gvh1600count", ] 
