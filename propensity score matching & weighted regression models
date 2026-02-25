@@ -1,0 +1,117 @@
+###### PROPENSITY SCORE MATCHING AND WEIGHTED REGRESSION MODELS ## ----
+### estimate propensity scores and matched sample ----
+m.out.main <- matchit(gvh1600_any ~ race + pov_t6 + hs_t6 + somcol_t6 + col_t6 + trct_pct_pov_t6 + pov_t5 + trct_pct_pov_t5 + vc_rate9, 
+                      data = df_final_full, 
+                      method = "full",
+                      distance = "glm", 
+                      link = "logit", 
+                      estimand = "att",
+                      caliper = c(pov_t6 = .25, trct_pct_pov_t6 = .25, pov_t5 = .25, trct_pct_pov_t5 = .25, vc_rate9 = 1), 
+                      std.caliper = c(TRUE, TRUE, TRUE, TRUE, TRUE),
+                      exact = ~ race)
+
+# check covariate balance 
+summary(m.out.main, addlvariables = ~ gvh1600count + bioage15_std + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
+        data = df_final_full, un = FALSE) 
+bal.tab(m.out.main,
+        addl = ~ gvh1600count + bioage15_std + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip,
+        un = FALSE,
+        disp.means = TRUE,
+        s.d.denom = "pooled",
+        data = df_final_full)
+love.plot(m.out.main, threshold = 0.10) # all covaraites balanced (all std. mean dif <.10)
+plot(m.out.main, type = "jitter", interactive = FALSE)
+plot(m.out.main, type='hist')
+plot(m.out.main, type = "density", interactive = FALSE,
+     which.xs = ~race + pov_t6 + trct_pct_pov_t6 + edu_t6)
+
+# extract matched data and weights 
+matched_data_main <- match.data(m.out.main, subclass = "subclass")
+
+## prep data for outcome regression models 
+
+# std exposure within treated group 
+# Function to standardize variables using treated group stats
+standardize_att <- function(data, var_name, treated_idx, weights_var = "weights") {
+  # Get the variable and weights
+  var <- data[[var_name]]
+  weights <- data[[weights_var]]
+  
+  # Calculate weighted mean and SD for treated group
+  mean_treated <- wtd.mean(var[treated_idx], weights = weights[treated_idx])
+  sd_treated <- sqrt(wtd.var(var[treated_idx], weights = weights[treated_idx]))
+  
+  # Standardize the entire variable
+  standardized <- (var - mean_treated) / sd_treated
+  
+  return(standardized)
+}
+
+# Identify treated observations once
+treated_idx <- matched_data_main$gvh1600_any == 1
+
+# Apply standardization to all variables
+vars_to_standardize <- c("gvh1600count", "dist_weight_count", "gvh1600_rate", "grmpc15", "phepc15", "pce15", "grmpc9", "phepc9", "pce9")
+
+for (var in vars_to_standardize) {
+  new_var_name <- paste0(var, "_att_std")
+  matched_data_main[[new_var_name]] <- standardize_att(
+    matched_data_main, 
+    var, 
+    treated_idx
+  )
+}
+
+## recalculate Y15 and Y9 std biological aging summary scores for matched sample 
+# Y15
+model_Y15_std_matched <- 'bioage15_att =~ grmpc15_att_std + phepc15_att_std + pce15_att_std' 
+fit_y15_std_matched <- cfa(model_Y15_std_matched, data=matched_data_main, std.lv = TRUE, sampling.weights = "weights")
+summary(fit_y15_std_matched, fit.measures = TRUE, standardized = TRUE)
+bioage15_pred <- data.frame(
+  idnum = matched_data_main$idnum,
+  bioage15_att = as.numeric(lavPredict(fit_y15_std_matched, newdata = matched_data_main)))
+#matched_data_main <- merge(matched_data_main, bioage15_pred, by = "idnum", sort = FALSE)
+# alt merge
+matched_data_main <- dplyr::left_join(
+  matched_data_main,
+  bioage15_pred,
+  by = "idnum"
+)
+
+# std outcome within treated matched sample 
+treated_idx <- matched_data_main$gvh1600_any == 1
+mean_treated <- wtd.mean(matched_data_main$bioage15_att[treated_idx], weights = matched_data_main$weights[treated_idx])
+sd_treated <- sqrt(wtd.var(matched_data_main$bioage15_att[treated_idx], weights = matched_data_main$weights[treated_idx]))
+matched_data_main$bioage15_att_std <- (matched_data_main$bioage15_att - mean_treated) / sd_treated
+
+
+# Y9 
+model_Y9_std_matched <- 'bioage9_att =~ grmpc9_att_std + phepc9_att_std + pce9_att_std' 
+fit_y9_std_matched <- cfa(model_Y9_std_matched, data=matched_data_main, std.lv = TRUE, sampling.weights = "weights")
+summary(fit_y9_std_matched, fit.measures = TRUE, standardized = TRUE)
+bioage9_pred <- data.frame(
+  idnum = matched_data_main$idnum,
+  bioage9_att = as.numeric(lavPredict(fit_y9_std_matched, newdata = matched_data_main)))
+#matched_data_main <- merge(matched_data_main, bioage9_pred, by = "idnum", sort = FALSE)
+# alt merge 
+matched_data_main <- dplyr::left_join(
+  matched_data_main,
+  bioage9_pred,
+  by = "idnum"
+)
+
+# std outcome within treated matched sample 
+treated_idx <- matched_data_main$gvh1600_any == 1
+mean_treated <- wtd.mean(matched_data_main$bioage9_att[treated_idx], weights = matched_data_main$weights[treated_idx])
+sd_treated <- sqrt(wtd.var(matched_data_main$bioage9_att[treated_idx], weights = matched_data_main$weights[treated_idx]))
+matched_data_main$bioage9_att_std <- (matched_data_main$bioage9_att - mean_treated) / sd_treated
+
+
+### outcome regression models ----
+## main model ----
+# std main exposure
+main_psm_out_std <- lm(bioage15_att_std ~ gvh1600count_att_std + bioage9_att_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
+                       data=matched_data_main, 
+                       weights = weights)
+coeftest(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass) 
+coefci(main_psm_out_std, vcov. = vcovCL, cluster = ~subclass, level = 0.95) 
