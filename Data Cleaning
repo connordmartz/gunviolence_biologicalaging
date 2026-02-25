@@ -1,0 +1,577 @@
+## DATA CLEANING ## ----
+# [1] load libraries ----
+library(tidyverse)
+library(semTools)
+library(magrittr)
+library(dplyr)
+library(plyr) 
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(fmsb)
+library(sjmisc)
+library(haven)
+library(glue)
+library(here)
+library(janitor)
+library(gt)
+library(reshape2)
+library(filesstrings)
+library(naniar)
+library(readxl)
+library(lmtest)
+library(corrplot)
+library(png)
+library(lars)
+library(knitr)
+library(kableExtra)
+library(lme4)
+library(performance)
+library(purrr)
+library(lubridate)
+library(car)
+library(ggstatsplot)
+library(cowplot)
+library(patchwork)
+library(MplusAutomation)
+library(lars)
+library(selectiveInference)
+library(broom)
+library(sandwich)
+library(lmtest)
+library(mgcv)
+library(easystats)
+library(DHARMa)
+library(glmmTMB)
+library(ggcorrplot)
+library(MatchIt)
+library(cobalt)
+library(twang)
+library(survey)
+library(gbm)
+library(Hmisc)
+library(nnet)
+library(tableone) 
+library(weights) 
+library(rbounds) 
+library(randomForest)
+library(osDesign)
+library(quantreg)
+library(forestplot)
+library(marginaleffects)
+library(DT)
+library(GGally)
+library(psych)
+library(polycor)
+library(table1)
+library(margins)
+library(lavaan) 
+library(lavaan.mi)
+library(ggh4x)
+library(Hmisc)
+library(survey)
+library(fastDummies)
+##################################################### ------
+# [2] DATA IMPORTS ####
+# [2.1] core public data ----
+core <- read_dta("~/Library/CloudStorage/Box-Box/FFCWS Data/FF_allwaves_2020v2.dta") 
+# [2.2] raw DNAm clock data ---- 
+dnam <- read_dta("~/Library/CloudStorage/Box-Box/FFCWS Data/biomarker_final_pub.dta")
+# [2.3] tract-level data ----
+census00 <- read_csv("/Volumes/FragileFamilies/Data/new_contract_data_sep23/ffgeo7_all_pub.dta") 
+census00_reduced <- dplyr::select(census00, "idnum", 
+                                  "tp6tract_cen00", # tract ID
+                                  "tp6pblck_acs15", # % black
+                                  "tp6phisp_acs15", # % hisp
+                                  "tp6pwhte_acs15", # % white
+                                  "tp6pfrgn_acs15", # % foreign born
+                                  "tp6pfbpl_acs15", # % poverty
+                                  "tp6mhinc_acs15", # med HH inc
+                                  "tp6pfhhr_acs15", # % female-headed HH
+                                  "tp6puemp_acs15", # % unemployed 
+                                  "tp6ppuba_acs15", # % public assistance
+                                  "tp6p25hs_acs15", # % HS degree +
+                                  "tp6p25b_acs15",  # % bach degree +
+                                  "tp6pfmga_acs15", # % managerial or professional occupation
+                                  "tp6pvach_acs15", # % housing units vacant 
+                                  "tp6pb10k_acs15", # % familes with income <10k
+                                  "tp6p1014_acs15", # % familes with income 10k-14,999k
+                                  "tp6p1524_acs15", # % familes with income 15k-24,999
+                                  "tp6p2534_acs15", # % familes with income 25k-34,999
+                                  "tp6p3549_acs15", # % familes with income 35k-49,999
+                                  "tp6p5074_acs15", # % familes with income 50k-74,999
+                                  "tp6p7599_acs15", # % familes with income 75k-99,999
+                                  "tp6p100k_acs15", # % familes with income 100k-149,999
+                                  "tp6p150k_acs15", # % familes with income >=150k
+                                  "tm5pfbpl_cen00", 
+                                  "tm5tract_cen00", 
+                                  "cp6_moved_9_15")
+# [2.4] geo identifiers ----
+geoid <- read_csv("/Volumes/FragileFamilies/Data/new_contract_data_sep23/contractcity6pub.dta") 
+# [2.5] gva data ----         
+FF_gva <- read_csv("/Volumes/FragileFamilies/Data/new_contract_data_sep23/ff_gva_15y_pub1_20190426.dta")
+# [2.6] county-level crime data (UCR) ----
+FF_ucr <- read_csv("/Volumes/FragileFamilies/Data/new_contract_data_sep23/ff_UCR_pub1.dta")
+# [3] DATA CLEANING ####
+# [3.1] calculate residuals of clocks for analytic sample ----
+
+# create separate datasets for W5/W6 epic and 450k
+Epic.Dataset.W5 <- dnam %>%
+  filter(!is.na(k5me_age))  %>%
+  dplyr::select(k5me_age, k5me_phenoage, k5me_grim, k5me_poam45, 
+                k5me_pcphenoage, k5me_pcgrim,
+                k5me_epi, k5me_fib, k5me_ic, 
+                k5me_epithelial, k5me_immune,
+                k5me_plasmablast, k5me_cd8pcd28ncd45ran, k5me_cd8_naive, 
+                k5me_gr, k5me_nk, k5me_b, k5me_cd4, k5me_cd8, k5me_mo, 
+                idnum) 
+Epic.Dataset.W6 <- dnam %>%
+  filter(!is.na(k6me_age)) %>%
+  dplyr::select(k6me_age, k6me_phenoage, k6me_grim, k6me_poam45, 
+                k6me_pcphenoage, k6me_pcgrim,
+                k6me_epi, k6me_fib, k6me_ic, 
+                k6me_epithelial, k6me_immune,
+                k6me_plasmablast, k6me_cd8pcd28ncd45ran,  k6me_cd8_naive, 
+                k6me_gr, k6me_nk, k6me_b, k6me_cd4, k6me_cd8, k6me_mo, 
+                idnum)
+K450.Dataset.W5 <- dnam %>%
+  filter(!is.na(k5mk_age)) %>%
+  dplyr::select(k5mk_age, k5mk_phenoage, k5mk_grim, k5mk_poam45, 
+                k5mk_pcphenoage, k5mk_pcgrim,
+                k5mk_epi, k5mk_fib, k5mk_ic, 
+                k5mk_epithelial, k5mk_immune,
+                k5mk_plasmablast, k5mk_cd8pcd28ncd45ran,  k5mk_cd8_naive, 
+                k5mk_gr, k5mk_nk, k5mk_b, k5mk_cd4, k5mk_cd8, k5mk_mo, 
+                idnum) 
+K450.Dataset.W6 <- dnam %>%
+  filter(!is.na(k6mk_age)) %>%
+  dplyr::select(k6mk_age, k6mk_phenoage, k6mk_grim, k6mk_poam45, 
+                k6mk_pcphenoage, k6mk_pcgrim,
+                k6mk_epi, k6mk_fib, k6mk_ic,
+                k6mk_epithelial, k6mk_immune,
+                k6mk_plasmablast, k6mk_cd8pcd28ncd45ran,  k6mk_cd8_naive, 
+                k6mk_gr, k6mk_nk, k6mk_b, k6mk_cd4, k6mk_cd8, k6mk_mo, 
+                idnum) 
+
+# calculate AgeAccelDNAm for overall sample by wave/chip
+Epic.Dataset.W5 <- Epic.Dataset.W5 %>% mutate(
+  grim.raw.W5 = k5me_grim,
+  phe.raw.W5 = k5me_phenoage, 
+  pace.raw.W5 = k5me_poam45, 
+  grim.pc.raw.W5 = k5me_pcgrim,
+  phe.pc.raw.W5 = k5me_pcphenoage, 
+  phenoage.resid.W5 = residuals(lm(k5me_phenoage ~ k5me_age, data = .)), 
+  grim.resid.W5 = residuals(lm(k5me_grim ~ k5me_age, data = .)),
+  PoAm45.Z.W5 = scale(k5me_poam45) %>% as.vector, # no residuals for dunedinpace 
+  phenoage.pc.resid.W5 = residuals(lm(k5me_pcphenoage ~ k5me_age, data = .)), 
+  grim.pc.resid.W5 = residuals(lm(k5me_pcgrim ~ k5me_age, data = .)),
+  chip = 1,
+  age5 = 1*k5me_age,
+  epi_t5 = 1*k5me_epi,
+  fib_t5 = 1*k5me_fib,
+  ic_t5 = 1*k5me_ic, 
+  # round values of k5me_epithelial to account for high values of k5me_immune
+  epithelial_t5 = case_when( 
+    k5me_immune == 1 ~ 0, 
+    k5me_immune < 1 ~ 1*k5me_epithelial,
+    TRUE ~ NA),
+  immune_t5 = 1*k5me_immune,
+  plasmablast_t5 = 1*k5me_plasmablast, 
+  cd8pcd28ncd45ran_t5 = 1*k5me_cd8pcd28ncd45ran,
+  cd8naive_t5 = 1*k5me_cd8_naive,
+  gr_t5 = 1*k5me_gr, 
+  nk_t5 = 1*k5me_nk, 
+  b_t5 = 1*k5me_b,
+  cd4_t5 = 1*k5me_cd4,
+  cd8_t5 = 1*k5me_cd8, 
+  mo_t5 = 1*k5me_mo) 
+Epic.Dataset.W6 %<>% mutate(
+  grim.raw.W6 = k6me_grim,
+  phe.raw.W6 = k6me_phenoage, 
+  pace.raw.W6 = k6me_poam45, 
+  grim.pc.raw.W6 = k6me_pcgrim,
+  phe.pc.raw.W6 = k6me_pcphenoage, 
+  phenoage.resid.W6 = residuals(lm(k6me_phenoage ~ k6me_age, data = .)), 
+  grim.resid.W6 = residuals(lm(k6me_grim ~ k6me_age, data = .)),
+  PoAm45.Z.W6 = scale(k6me_poam45) %>% as.vector, # no residuals for dunedinpace 
+  phenoage.pc.resid.W6 = residuals(lm(k6me_pcphenoage ~ k6me_age, data = .)), 
+  grim.pc.resid.W6 = residuals(lm(k6me_pcgrim ~ k6me_age, data = .)),
+  age6 = 1*k6me_age,
+  epi_t6 = 1*k6me_epi,
+  fib_t6 = 1*k6me_fib,
+  ic_t6 = 1*k6me_ic,
+  # round values of k5me_epithelial to account for high values of k5me_immune
+  epithelial_t6 = case_when(
+    k6me_immune == 1 ~ 0, 
+    k6me_immune < 1 ~ 1*k6me_epithelial,
+    TRUE ~ NA),
+  immune_t6 = 1*k6me_immune,
+  plasmablast_t6 = 1*k6me_plasmablast, 
+  cd8pcd28ncd45ran_t6 = 1*k6me_cd8pcd28ncd45ran,
+  cd8naive_t6 = 1*k6me_cd8_naive,
+  gr_t6 = 1*k6me_gr, 
+  nk_t6 = 1*k6me_nk, 
+  b_t6 = 1*k6me_b,
+  cd4_t6 = 1*k6me_cd4,
+  cd8_t6 = 1*k6me_cd8, 
+  mo_t6 = 1*k6me_mo) 
+K450.Dataset.W5 %<>% mutate(
+  grim.raw.W5 = k5mk_grim,
+  phe.raw.W5 = k5mk_phenoage, 
+  pace.raw.W5 = k5mk_poam45, 
+  grim.pc.raw.W5 = k5mk_pcgrim,
+  phe.pc.raw.W5 = k5mk_pcphenoage, 
+  phenoage.resid.W5 = residuals(lm(k5mk_phenoage ~ k5mk_age, data = .)), 
+  grim.resid.W5 = residuals(lm(k5mk_grim ~ k5mk_age, data = .)),
+  PoAm45.Z.W5 = scale(k5mk_poam45) %>% as.vector, # no residuals for dunedinpace 
+  phenoage.pc.resid.W5 = residuals(lm(k5mk_pcphenoage ~ k5mk_age, data = .)), 
+  grim.pc.resid.W5 = residuals(lm(k5mk_pcgrim ~ k5mk_age, data = .)),
+  chip = 0,
+  age5 = 1*k5mk_age,
+  epi_t5 = 1*k5mk_epi,
+  fib_t5 = 1*k5mk_fib,
+  ic_t5 = 1*k5mk_ic,
+  # round values of k5me_epithelial to account for high values of k5me_immune
+  epithelial_t5 = case_when(
+    k5mk_immune == 1 ~ 0, 
+    k5mk_immune < 1 ~ 1*k5mk_epithelial,
+    TRUE ~ NA), 
+  immune_t5 = 1*k5mk_immune,
+  plasmablast_t5 = 1*k5mk_plasmablast, 
+  cd8pcd28ncd45ran_t5 = 1*k5mk_cd8pcd28ncd45ran,
+  cd8naive_t5 = 1*k5mk_cd8_naive,
+  gr_t5 = 1*k5mk_gr, 
+  nk_t5 = 1*k5mk_nk, 
+  b_t5 = 1*k5mk_b,
+  cd4_t5 = 1*k5mk_cd4,
+  cd8_t5 = 1*k5mk_cd8, 
+  mo_t5 = 1*k5mk_mo) 
+K450.Dataset.W6 %<>% mutate(
+  grim.raw.W6 = k6mk_grim,
+  phe.raw.W6 = k6mk_phenoage, 
+  pace.raw.W6 = k6mk_poam45, 
+  grim.pc.raw.W6 = k6mk_pcgrim,
+  phe.pc.raw.W6 = k6mk_pcphenoage, 
+  phenoage.resid.W6 = residuals(lm(k6mk_phenoage ~ k6mk_age, data = .)), 
+  grim.resid.W6 = residuals(lm(k6mk_grim ~ k6mk_age, data = .)),
+  PoAm45.Z.W6 = scale(k6mk_poam45) %>% as.vector, # no residuals for dunedinpace 
+  phenoage.pc.resid.W6 = residuals(lm(k6mk_pcphenoage ~ k6mk_age, data = .)), 
+  grim.pc.resid.W6 = residuals(lm(k6mk_pcgrim ~ k6mk_age, data = .)),
+  age6 = 1*k6mk_age,
+  epi_t6 = 1*k6mk_epi,
+  fib_t6 = 1*k6mk_fib,
+  ic_t6 = 1*k6mk_ic,
+  # round values of k5me_epithelial to account for high values of k5me_immune
+  epithelial_t6 = case_when(
+    k6mk_immune == 1 ~ 0, 
+    k6mk_immune < 1 ~ 1*k6mk_epithelial,
+    TRUE ~ NA),
+  immune_t6 = 1*k6mk_immune,
+  plasmablast_t6 = 1*k6mk_plasmablast, 
+  cd8pcd28ncd45ran_t6 = 1*k6mk_cd8pcd28ncd45ran,
+  cd8naive_t6 = 1*k6mk_cd8_naive,
+  gr_t6 = 1*k6mk_gr, 
+  nk_t6 = 1*k6mk_nk, 
+  b_t6 = 1*k6mk_b,
+  cd4_t6 = 1*k6mk_cd4,
+  cd8_t6 = 1*k6mk_cd8, 
+  mo_t6 = 1*k6mk_mo) 
+
+# join epic and 450k for each wave
+joined.comb.w5 <- bind_rows(Epic.Dataset.W5, K450.Dataset.W5)
+joined.comb.w6 <- bind_rows(Epic.Dataset.W6, K450.Dataset.W6)
+
+# combine y9 abd y15 into single df 
+joined.comb_eaa <- joined.comb.w5 %>%
+  left_join(joined.comb.w6, by = "idnum")
+
+
+# [3.2] merge data frames and rename/code variables   ----
+df_merged_clean <- core %>%
+  inner_join(joined.comb_eaa, by = "idnum") %>%
+  inner_join(geoid, by = "idnum") %>%
+  inner_join(census00_reduced, by = "idnum")  %>%
+  inner_join(FF_gva, by = "idnum") %>%
+  inner_join(FF_ucr, by = "idnum") %>%
+  mutate(
+    # create date variables for Year 15 DNAm sample receipt 
+    date_dnam15 = case_when(
+      age6 > 0 ~ as.Date(paste(cm1intyr, cm1intmon, "15", sep = "-")) %m+% months(round(age6 * 12)),
+      TRUE ~ NA), 
+    date_6mon_prior_dnam15 = date_dnam15 %m-% months(6),
+    follow_up_month = month(date_dnam15),
+    # rename epigenetic clock variables and create standardized variables 
+    grmraw_t5 = grim.raw.W5,
+    grmraw_t6 = grim.raw.W6,
+    pheraw_t5 = phe.raw.W5,
+    pheraw_t6 = phe.raw.W6,
+    pceraw_t5 = pace.raw.W5,
+    pceraw_t6 = pace.raw.W6,
+    pherawpc_t5 = phe.pc.raw.W5,
+    pherawpc_t6 = phe.pc.raw.W6,
+    grmrawpc_t5 = grim.pc.raw.W5,
+    grmrawpc_t6 = grim.pc.raw.W6,
+    phe9 = phenoage.resid.W5,
+    phe9_std = scale(phe9) %>% as.vector, 
+    phepc9 = phenoage.pc.resid.W5,
+    phepc9_std = scale(phepc9) %>% as.vector, 
+    phe15 = phenoage.resid.W6,
+    phe15_std = scale(phe15) %>% as.vector, 
+    phepc15 = phenoage.pc.resid.W6,
+    phepc15_std = scale(phepc15) %>% as.vector, 
+    grm9 = grim.resid.W5,
+    grm9_std = scale(grm9) %>% as.vector, 
+    grmpc9 =  grim.pc.resid.W5,
+    grmpc9_std = scale(grmpc9) %>% as.vector, 
+    grm15 = grim.resid.W6,
+    grm15_std = scale(grm15) %>% as.vector, 
+    grmpc15 =  grim.pc.resid.W6,
+    grmpc15_std = scale(grmpc15) %>% as.vector, 
+    pce9 = PoAm45.Z.W5,
+    pce15 = PoAm45.Z.W6,
+    
+    # [3.3] create variables for years of dgv exposure data based on GVA start date (Jan 1, 2014) and date of DNAm sample receipt ----
+    gva_start_date = as.Date("2014-01-01"),
+    years_dgv_exposure_prior_to_dnam15 = (as.numeric(difftime(date_dnam15, gva_start_date, units = "days")) / 365),
+    atleast_1year_exposure = case_when(years_dgv_exposure_prior_to_dnam15 < 1 ~ 0, 
+                                       years_dgv_exposure_prior_to_dnam15 >= 1 ~ 1, 
+                                       TRUE ~ NA),
+    # [3.4] create dichotomous variable for any DGV (gvh1600_any) ----
+    gvh1600_any = case_when(
+      rg6gva_totl_1600m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1600m_home_365d_k6 > 0 ~ 1,
+      TRUE ~ NA),
+    # addition variables at closer distances for senstivitiy tests
+    gvh1000_any = case_when(
+      rg6gva_totl_1000m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1000m_home_365d_k6 > 0 ~ 1,
+      TRUE ~ NA),
+    gvh500_any = case_when(
+      rg6gva_totl_500m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_500m_home_365d_k6 > 0 ~ 1,
+      TRUE ~ NA),
+    # [3.5] create continuous (gvh1600count) and categorical (gvh1600cat) variables for incident DGV count ---- 
+    gvh1600count = ifelse(rg6gva_totl_1600m_home_365d_k6 >= 0, rg6gva_totl_1600m_home_365d_k6, NA),
+    gvh1600count_std = scale(gvh1600count), 
+    gvh1600cat = case_when(
+      gvh1600count == 0 ~ 0, # unexposed
+      gvh1600count == 1 ~ 1, # low (n=330)
+      gvh1600count > 1 & gvh1600count <=5 ~ 2, # moderate (n=396)
+      gvh1600count > 5 ~ 3), # high (n=287)
+    # additional variables for counts at closer distances (1000m & 500m) 
+    gvh1000count = ifelse(rg6gva_totl_1000m_home_365d_k6 >= 0, rg6gva_totl_1000m_home_365d_k6, NA),
+    gvh1000count_std = scale(gvh1000count), 
+    gvh500count = ifelse(rg6gva_totl_500m_home_365d_k6 >= 0, rg6gva_totl_500m_home_365d_k6, NA),
+    gvh500count_std = scale(gvh500count), 
+    # [3.6] create continuous variables for incident DGV count in 100m intervals ----
+    gvh1500_1600count = case_when(
+      rg6gva_totl_1600m_home_365d_k6 == 0 & rg6gva_totl_1500m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1600m_home_365d_k6 >= 0 & rg6gva_totl_1500m_home_365d_k6 >= 0 ~ rg6gva_totl_1600m_home_365d_k6 - rg6gva_totl_1500m_home_365d_k6,
+      TRUE ~ NA), 
+    gvh1400_1500count = case_when(
+      rg6gva_totl_1500m_home_365d_k6 == 0 & rg6gva_totl_1400m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1500m_home_365d_k6 >= 0 & rg6gva_totl_1400m_home_365d_k6 >= 0 ~ rg6gva_totl_1500m_home_365d_k6 - rg6gva_totl_1400m_home_365d_k6,
+      TRUE ~ NA), 
+    gvh1300_1400count = case_when(
+      rg6gva_totl_1400m_home_365d_k6 == 0 & rg6gva_totl_1300m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1400m_home_365d_k6 >= 0 & rg6gva_totl_1300m_home_365d_k6 >= 0 ~ rg6gva_totl_1400m_home_365d_k6 - rg6gva_totl_1300m_home_365d_k6,
+      TRUE ~ NA), 
+    gvh1250_1300count = case_when( 
+      rg6gva_totl_1300m_home_365d_k6 == 0 & rg6gva_totl_1250m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1300m_home_365d_k6 >= 0 & rg6gva_totl_1250m_home_365d_k6 >= 0 ~ rg6gva_totl_1300m_home_365d_k6 - rg6gva_totl_1250m_home_365d_k6,
+      TRUE ~ NA),
+    gvh1200_1250count = case_when(
+      rg6gva_totl_1250m_home_365d_k6 == 0 & rg6gva_totl_1200m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1250m_home_365d_k6 >= 0 & rg6gva_totl_1200m_home_365d_k6 >= 0 ~ rg6gva_totl_1250m_home_365d_k6 - rg6gva_totl_1200m_home_365d_k6,
+      TRUE ~ NA),
+    gvh1200_1300count = case_when(
+      rg6gva_totl_1300m_home_365d_k6 == 0 & rg6gva_totl_1200m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1300m_home_365d_k6 >= 0 & rg6gva_totl_1200m_home_365d_k6 >= 0 ~ rg6gva_totl_1300m_home_365d_k6 - rg6gva_totl_1200m_home_365d_k6,
+      TRUE ~ NA),
+    gvh1100_1200count = case_when(
+      rg6gva_totl_1200m_home_365d_k6 == 0 & rg6gva_totl_1100m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1200m_home_365d_k6 >= 0 & rg6gva_totl_1100m_home_365d_k6 >= 0 ~ rg6gva_totl_1200m_home_365d_k6 - rg6gva_totl_1100m_home_365d_k6,
+      TRUE ~ NA),
+    gvh1000_1100count = case_when(
+      rg6gva_totl_1100m_home_365d_k6 == 0 & rg6gva_totl_1000m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1100m_home_365d_k6 >= 0 & rg6gva_totl_1000m_home_365d_k6 >= 0 ~ rg6gva_totl_1100m_home_365d_k6 - rg6gva_totl_1000m_home_365d_k6,
+      TRUE ~ NA),
+    gvh900_1000count = case_when(
+      rg6gva_totl_1000m_home_365d_k6 == 0 & rg6gva_totl_900m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_1000m_home_365d_k6 >= 0 & rg6gva_totl_900m_home_365d_k6 >= 0 ~ rg6gva_totl_1000m_home_365d_k6 - rg6gva_totl_900m_home_365d_k6,
+      TRUE ~ NA ),
+    gvh800_900count = case_when(
+      rg6gva_totl_900m_home_365d_k6 == 0 & rg6gva_totl_800m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_900m_home_365d_k6 >= 0 & rg6gva_totl_800m_home_365d_k6 >= 0 ~ rg6gva_totl_900m_home_365d_k6 - rg6gva_totl_800m_home_365d_k6,
+      TRUE ~ NA),
+    gvh750_800count = case_when(
+      rg6gva_totl_800m_home_365d_k6 == 0 & rg6gva_totl_750m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_800m_home_365d_k6 >= 0 & rg6gva_totl_750m_home_365d_k6 >= 0 ~ rg6gva_totl_800m_home_365d_k6 - rg6gva_totl_750m_home_365d_k6,
+      TRUE ~ NA),
+    gvh700_750count = case_when(
+      rg6gva_totl_750m_home_365d_k6 == 0 & rg6gva_totl_700m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_750m_home_365d_k6 >= 0 & rg6gva_totl_700m_home_365d_k6 >= 0 ~ rg6gva_totl_750m_home_365d_k6 - rg6gva_totl_700m_home_365d_k6,
+      TRUE ~ NA),
+    gvh700_800count = case_when(
+      rg6gva_totl_800m_home_365d_k6 == 0 & rg6gva_totl_700m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_800m_home_365d_k6 >= 0 & rg6gva_totl_700m_home_365d_k6 >= 0 ~ rg6gva_totl_800m_home_365d_k6 - rg6gva_totl_700m_home_365d_k6,
+      TRUE ~ NA),
+    gvh600_700count = case_when(
+      rg6gva_totl_700m_home_365d_k6 == 0 & rg6gva_totl_600m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_700m_home_365d_k6 >= 0 & rg6gva_totl_600m_home_365d_k6 >= 0 ~ rg6gva_totl_700m_home_365d_k6 - rg6gva_totl_600m_home_365d_k6,
+      TRUE ~ NA),
+    gvh500_600count = case_when(
+      rg6gva_totl_600m_home_365d_k6 == 0 & rg6gva_totl_500m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_600m_home_365d_k6 >= 0 & rg6gva_totl_500m_home_365d_k6 >= 0 ~ rg6gva_totl_600m_home_365d_k6 - rg6gva_totl_500m_home_365d_k6,
+      TRUE ~ NA),
+    gvh400_500count = case_when(
+      rg6gva_totl_500m_home_365d_k6 == 0 & rg6gva_totl_400m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_500m_home_365d_k6 >= 0 & rg6gva_totl_400m_home_365d_k6 >= 0 ~ rg6gva_totl_500m_home_365d_k6 - rg6gva_totl_400m_home_365d_k6,
+      TRUE ~ NA),
+    gvh300_400count = case_when(
+      rg6gva_totl_400m_home_365d_k6 == 0 & rg6gva_totl_300m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_400m_home_365d_k6 >= 0 & rg6gva_totl_300m_home_365d_k6 >= 0 ~ rg6gva_totl_400m_home_365d_k6 - rg6gva_totl_300m_home_365d_k6,
+      TRUE ~ NA),
+    gvh250_300count = case_when(
+      rg6gva_totl_300m_home_365d_k6 == 0 & rg6gva_totl_250m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_300m_home_365d_k6 >= 0 & rg6gva_totl_250m_home_365d_k6 >= 0 ~ rg6gva_totl_300m_home_365d_k6 - rg6gva_totl_250m_home_365d_k6,
+      TRUE ~ NA),
+    gvh200_250count = case_when(
+      rg6gva_totl_250m_home_365d_k6 == 0 & rg6gva_totl_200m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_250m_home_365d_k6 >= 0 & rg6gva_totl_200m_home_365d_k6 >= 0 ~ rg6gva_totl_250m_home_365d_k6 - rg6gva_totl_200m_home_365d_k6,
+      TRUE ~ NA),
+    gvh200_300count = case_when(
+      rg6gva_totl_300m_home_365d_k6 == 0 & rg6gva_totl_200m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_300m_home_365d_k6 >= 0 & rg6gva_totl_200m_home_365d_k6 >= 0 ~ rg6gva_totl_300m_home_365d_k6 - rg6gva_totl_200m_home_365d_k6,
+      TRUE ~ NA),
+    gvh100_200count = case_when(
+      rg6gva_totl_200m_home_365d_k6 == 0 & rg6gva_totl_100m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_200m_home_365d_k6 >= 0 & rg6gva_totl_100m_home_365d_k6 >= 0 ~ rg6gva_totl_200m_home_365d_k6 - rg6gva_totl_100m_home_365d_k6,
+      TRUE ~ NA),
+    gvh0_100count = case_when(
+      rg6gva_totl_100m_home_365d_k6 == 0 ~ 0,
+      rg6gva_totl_100m_home_365d_k6 > 0 ~ rg6gva_totl_100m_home_365d_k6,
+      TRUE ~ NA), 
+# create standardize incident DGV rate (gvh1600_rate) ----
+    # for those with less than 1 year of exposure data, weight count DGV incidents by years of available GVA data 
+    gvh1600_rate = ifelse(atleast_1year_exposure == 0, (gvh1600count / years_dgv_exposure_prior_to_dnam15), gvh1600count), 
+# [3.9] individual-level covariates ----
+    # time-invariant 
+    race = case_when(
+      ck6ethrace == 1 ~ 1,         # white=1
+      ck6ethrace == 2 ~ 2,         # black=2
+      ck6ethrace == 3 ~ 3,         # hispanic=3
+      ck6ethrace %in% c(4, 5) ~ 4, # multi-racial + other non-hispanic=4
+      # if missing on youth self-identified race/ethnicity, use parent self-identified race/ethnicity
+      ck6ethrace %in% c(-1, -2, -3) & cm1ethrace == 2 & (cf1ethrace == 2 | (m1i4 == 2 & m1i4a != 1)) ~ 2, 
+      ck6ethrace %in% c(-1, -2, -3) & cm1ethrace == 1 & (cf1ethrace == 1 | (m1i4 == 1 & m1i4a != 1)) ~ 1,
+      ck6ethrace %in% c(-1, -2, -3) & cm1ethrace == 3 & (cf1ethrace == 3 | (m1i4 == 5 & m1i4a == 1)) ~ 3,
+      ck6ethrace %in% c(-1, -2, -3) & (cm1ethrace %in% c(4, 5) | cf1ethrace %in% c(4, 5)) ~ 4,
+      ck6ethrace %in% c(-1, -2, -3) & cm1ethrace == 1 & cf1ethrace %in% c(2, 3) ~ 4,
+      ck6ethrace %in% c(-1, -2, -3) & cf1ethrace == 1 & cm1ethrace %in% c(2, 3) ~ 4,
+      ck6ethrace %in% c(-1, -2, -3) & cm1ethrace == 2 & cf1ethrace %in% c(1, 3) ~ 4,
+      ck6ethrace %in% c(-1, -2, -3) & cf1ethrace == 2 & cm1ethrace %in% c(1, 3) ~ 4,
+      ck6ethrace %in% c(-1, -2, -3) & cm1ethrace == 3 & cf1ethrace %in% c(1, 2) ~ 4,
+      ck6ethrace %in% c(-1, -2, -3) & cf1ethrace == 3 & cm1ethrace %in% c(1, 2) ~ 4,
+      ck6ethrace == -9 & cm1ethrace == 1 & cf1ethrace == 1 ~ 1, 
+      ck6ethrace == -9 & cm1ethrace == 2 & cf1ethrace == 2 ~ 2, 
+      ck6ethrace == -9 & cm1ethrace == 3 & cf1ethrace == 3 ~ 3, 
+      ck6ethrace == -9 & cm1ethrace == 1 & cf1ethrace %in% c(2, 3, 4, 5) ~ 4, 
+      ck6ethrace == -9 & cf1ethrace == 1 & cm1ethrace %in% c(2, 3, 4, 5) ~ 4, 
+      TRUE ~ NA),
+    black = case_when(race==2 ~ 1, 
+                      race %in% c(1,3,4) ~ 0, 
+                      TRUE ~ NA), 
+    white = case_when(race==1 ~ 1, 
+                      race %in% c(2,3,4) ~ 0, 
+                      TRUE ~ NA), 
+    hisp = case_when(race==3 ~ 1, 
+                     race %in% c(1,2,4) ~ 0, 
+                     TRUE ~ NA), 
+    other = case_when(race==4 ~ 1, 
+                      race %in% c(1,2,3) ~ 0, 
+                      TRUE ~ NA), 
+    female = case_when(
+      cm1bsex == 1 ~ 0,
+      cm1bsex == 2 ~ 1,
+      TRUE ~ NA),
+    momsmk = ifelse(is.na(m1g4), NA, 
+                    ifelse(m1g4 == 4, 0, 1)),
+    # time-varying 
+    age_t5 = case_when(age5 > 0 ~ age5, TRUE ~ NA),
+    age_t6 = case_when(age6 > 0 ~ age6, TRUE ~ NA), # age in months at DNAm sample receipt
+    edu_t5 = case_when(cm5edu > 0 ~ cm5edu, TRUE ~ NA),
+    nohs_t5 = case_when(
+      edu_t5 == 1 ~ 1, 
+      edu_t5 %in% c(2,3,4) ~ 0,
+      TRUE ~ NA), 
+    hs_t5 = case_when(
+      edu_t5 == 2 ~ 1, 
+      edu_t5 %in% c(1,3,4) ~ 0,
+      TRUE ~ NA), 
+    somcol_t5 = case_when(
+      edu_t5 == 3 ~ 1, 
+      edu_t5 %in% c(1,2,4) ~ 0,
+      TRUE ~ NA), 
+    col_t5 = case_when(
+      edu_t5 == 4 ~ 1, 
+      edu_t5 %in% c(1,2,3) ~ 0,
+      TRUE ~ NA), 
+    edu_t6 = case_when(cp6edu > 0 ~ cp6edu, TRUE ~ NA),
+    nohs_t6 = case_when(
+      edu_t6 == 1 ~ 1, 
+      edu_t6 %in% c(2,3,4) ~ 0,
+      TRUE ~ NA), 
+    hs_t6 = case_when(
+      edu_t6 == 2 ~ 1, 
+      edu_t6 %in% c(1,3,4) ~ 0,
+      TRUE ~ NA), 
+    somcol_t6 = case_when(
+      edu_t6 == 3 ~ 1, 
+      edu_t6 %in% c(1,2,4) ~ 0,
+      TRUE ~ NA), 
+    col_t6 = case_when(
+      edu_t6 == 4 ~ 1, 
+      edu_t6 %in% c(1,2,3) ~ 0,
+      TRUE ~ NA), 
+    pov_t5 = case_when(cm5povco > 0 ~ cm5povco, TRUE ~ NA),
+    pov_t6 = case_when(cp6povco > 0 ~ cp6povco, TRUE ~ NA),
+    
+    # [3.10] tract-level covariates ---- 
+    trct_id5 = case_when(tm5tract_cen00 >= 0 ~ tm5tract_cen00, TRUE ~ NA),
+    trct_pct_pov_t5 = case_when(tm5pfbpl_cen00 >= 0 ~ tm5pfbpl_cen00*100, TRUE ~ NA),
+    trct_id6 = case_when(tp6tract_cen00 >= 0 ~ tp6tract_cen00, TRUE ~ NA),
+    trct_pct_pov_t6 = case_when(tp6pfbpl_acs15 >= 0 ~ tp6pfbpl_acs15*100, TRUE ~ NA),
+    moved_tracts_9_15 = case_when(
+      cp6_moved_9_15 == 1 ~ 1, 
+      cp6_moved_9_15 == 2 ~ 0,
+      TRUE ~ NA),
+    
+    # [3.11] county-level crime rates ----
+    vc_rate9 = case_when(rg5ucr_mviort >= 0 ~ as.numeric(rg5ucr_mviort), TRUE ~ NA), 
+    vc_rate9_std = scale(vc_rate9), 
+    vc_rate15 = case_when(rg6ucr_pviort >= 0 ~ as.numeric(rg6ucr_pviort), TRUE ~ NA), 
+    vc_rate15_std = scale(vc_rate15)) 
+
+
+# [4] final data prep ----
+# classify categorical variables as factors
+relevant_factor_vars <- c('edu_t6', 'edu_t5', 'gvh1600cat')
+df_merged_clean[relevant_factor_vars] <- lapply(df_merged_clean[relevant_factor_vars], function(x) as.factor(x))
+df_merged_clean$race <- factor(df_merged_clean$race, 
+                               levels = c(1, 2, 3, 4),
+                               labels = c("White", "Black", "Hispanic", "Other"))
+df_merged_clean$race <- relevel(df_merged_clean$race, ref = "Black")
+
+# create final df for overall analytic sample 
+df_final_full <- df_merged_clean %>% dplyr::select(idnum, 
+                                              grm9, phe9, pce9, grm15, phe15, pce15, grmpc9, phepc9, grmpc15, phepc15, pceraw_t5, pceraw_t6, grmraw_t5, grmraw_t6, pheraw_t5, pheraw_t6, grmrawpc_t5, grmrawpc_t6, pherawpc_t5, pherawpc_t6, 
+                                              grm9_std, phe9_std, grm15_std, phe15_std, grmpc9_std, phepc9_std, grmpc15_std, phepc15_std,
+                                              chip, plasmablast_t5, cd8pcd28ncd45ran_t5, cd8naive_t5, plasmablast_t6, cd8pcd28ncd45ran_t6, cd8naive_t6, 
+                                              age_t5, age_t6, female, race, momsmk,
+                                              edu_t5, edu_t6, hs_t6, somcol_t6, col_t6, pov_t5, pov_t6, trct_pct_pov_t5, trct_pct_pov_t6, vc_rate9, vc_rate15, vc_rate9_std, vc_rate15_std,
+                                              gvh1600_any, gvh1600count, gvh1600cat, gvh1600_rate, 
+                                              gvh1000count, gvh500count, 
+                                              atleast_1year_exposure)
+df_final_full <- na.omit(df_final_full)
+df_final_full <- as.data.frame(df_final_full)
