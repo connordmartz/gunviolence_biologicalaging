@@ -1,0 +1,78 @@
+# first create biological aging summary scores for full sample ----
+# Y15 
+model_Y15_std <- 'bioage15std =~ grmpc15_std + phepc15_std + pce15_std'
+fit_y15_std <- cfa(model_Y15_std, data=df_final_full, std.lv = TRUE)
+summary(fit_y15_std, fit.measures = TRUE, standardized = TRUE)
+data_used <- fit_y15_std@Data@X
+used_rows_indices <- fit_y15_std@Data@case.idx[[1]]
+bioage15_pred <- data.frame(
+  idnum = df_final_full$idnum, 
+  bioage15 = as.numeric(lavPredict(fit_y15_std, newdata = df_final_full)))
+df_final_full <- dplyr::left_join(
+  df_final_full,
+  bioage15_pred,
+  by = "idnum"
+)
+df_final_full$bioage15_std <- scale(df_final_full$bioage15)
+
+# Y9 
+model_Y9_std <- 'bioage9std =~ grmpc9_std + phepc9_std + pce9_std'
+fit_y9_std <- cfa(model_Y9_std, data=df_final_full, std.lv = TRUE)
+summary(fit_y9_std, fit.measures = TRUE, standardized = TRUE)
+data_used <- fit_y9_std@Data@X
+used_rows_indices <- fit_y9_std@Data@case.idx[[1]]
+bioage9_pred <- data.frame(
+  idnum = df_final_full$idnum, 
+  bioage9 = as.numeric(lavPredict(fit_y9_std, newdata = df_final_full)))
+df_final_full <- dplyr::left_join(
+  df_final_full,
+  bioage9_pred,
+  by = "idnum"
+)
+df_final_full$bioage9_std <- scale(df_final_full$bioage9)
+
+# standardized estimates 
+out_main_list_std <- list(
+  m1_bio = lm(bioage15_std ~ gvh1600count_std + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m2_bio = lm(bioage15_std ~ gvh1600count_std + pov_t6 + edu_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m3_bio = lm(bioage15_std ~ gvh1600count_std + pov_t6 + edu_t6 + trct_pct_pov_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m4_bio = lm(bioage15_std ~ gvh1600count_std + race + pov_t6 + edu_t6 + trct_pct_pov_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m5_bio = lm(bioage15_std ~ gvh1600count_std + vc_rate9_std + bioage9_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + pov_t5 + trct_pct_pov_t5 + race + pov_t6 + edu_t6 + trct_pct_pov_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full))
+results_main_std <- lapply(names(out_main_list_std), function(model_name) {
+  model <- out_main_list_std[[model_name]]
+  robust_se <- vcovHC(model, type = "HC1")
+  robust_ci <- coefci(model, vcov. = robust_se, level = 0.95)
+  robust_summary <- coeftest(model, vcov. = robust_se)
+  tidy_model <- tidy(robust_summary) %>%
+    mutate(
+      conf.low = robust_ci[, 1],
+      conf.high = robust_ci[, 2],
+      model = model_name,
+      summary = paste0(sprintf("%.3f", estimate), 
+                       " (", sprintf("%.3f", conf.low), 
+                       ", ", sprintf("%.3f", conf.high), ")")) %>%
+    dplyr::select(model, term, summary)
+  return(tidy_model)})
+df_results_main_std <- do.call(rbind, results_main_std)
+
+# model 1: 0.060 (0.037, 0.083)
+print(df_results_main_std$summary[df_results_main_std$term=="gvh1600count_std" & df_results_main_std$model=="m1_bio"])
+
+# model 2: 0.049 (0.025, 0.072)
+print(df_results_main_std$summary[df_results_main_std$term=="gvh1600count_std" & df_results_main_std$model=="m2_bio"])
+
+# model 3: 0.025 (-0.000, 0.050)
+print(df_results_main_std$summary[df_results_main_std$term=="gvh1600count_std" & df_results_main_std$model=="m3_bio"])
+
+# model 4: 0.006 (-0.018, 0.031)
+print(df_results_main_std$summary[df_results_main_std$term=="gvh1600count_std" & df_results_main_std$model=="m4_bio"])
+
+# model 5: 0.005 (-0.011, 0.020)
+print(df_results_main_std$summary[df_results_main_std$term=="gvh1600count_std" & df_results_main_std$model=="m5_bio"])
+
+num_observations <- sapply(out_main_list_std, function(model) {
+  nobs(model)})
+num_observations_df <- data.frame(
+  model = names(num_observations),
+  num_observations = num_observations)
+print(num_observations_df)
