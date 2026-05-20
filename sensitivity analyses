@@ -493,4 +493,143 @@ avg_comparisons(bio_predict,
                 vcov = vcov_clustered_bio)
 
 
+### ---- PedBE Clock for reviewer resposne -------
+
+# standardized estimates 
+out_pedbe <- list(
+  m1_bio = lm(pedbe15_std ~ gvh1600count_std + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m2_bio = lm(pedbe15_std ~ gvh1600count_std + pov_t6 + edu_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m3_bio = lm(pedbe15_std ~ gvh1600count_std + pov_t6 + edu_t6 + trct_pct_pov_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m4_bio = lm(pedbe15_std ~ gvh1600count_std + race + pov_t6 + edu_t6 + trct_pct_pov_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full),
+  m5_bio = lm(pedbe15_std ~ gvh1600count_std + vc_rate9_std + pedbe9_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + pov_t5 + trct_pct_pov_t5 + race + pov_t6 + edu_t6 + trct_pct_pov_t6 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, data = df_final_full))
+results_pedbe <- lapply(names(out_pedbe), function(model_name) {
+  model <- out_pedbe[[model_name]]
+  robust_se <- vcovHC(model, type = "HC1")
+  robust_ci <- coefci(model, vcov. = robust_se, level = 0.95)
+  robust_summary <- coeftest(model, vcov. = robust_se)
+  tidy_model <- tidy(robust_summary) %>%
+    mutate(
+      conf.low = robust_ci[, 1],
+      conf.high = robust_ci[, 2],
+      model = model_name,
+      summary = paste0(sprintf("%.3f", estimate), 
+                       " (", sprintf("%.3f", conf.low), 
+                       ", ", sprintf("%.3f", conf.high), ")")) %>%
+    dplyr::select(model, term, summary)
+  return(tidy_model)})
+df_results_pedbe <- do.call(rbind, results_pedbe)
+
+# model 1: 0.025 (0.001, 0.049)
+print(df_results_pedbe$summary[df_results_pedbe$term=="gvh1600count_std" & df_results_pedbe$model=="m1_bio"])
+
+# model 2: 0.026 (0.001, 0.051)
+print(df_results_pedbe$summary[df_results_pedbe$term=="gvh1600count_std" & df_results_pedbe$model=="m2_bio"])
+
+# model 3: 0.025 (-0.003, 0.053)
+print(df_results_pedbe$summary[df_results_pedbe$term=="gvh1600count_std" & df_results_pedbe$model=="m3_bio"])
+
+# model 4: 0.0022 (-0.006, 0.050)
+print(df_results_pedbe$summary[df_results_pedbe$term=="gvh1600count_std" & df_results_pedbe$model=="m4_bio"])
+
+# model 5: 0.008 (-0.015, 0.031)
+print(df_results_pedbe$summary[df_results_pedbe$term=="gvh1600count_std" & df_results_pedbe$model=="m5_bio"])
+
+num_observations <- sapply(out_main_list_std, function(model) {
+  nobs(model)})
+num_observations_df <- data.frame(
+  model = names(num_observations),
+  num_observations = num_observations)
+print(num_observations_df)
+
+### PSM Models ---- 
+
+# first create matched sample and weights 
+m.out.main <- matchit(gvh1600_any ~ race + pov_t6 + hs_t6 + somcol_t6 + col_t6 + trct_pct_pov_t6 + pov_t5 + trct_pct_pov_t5 + vc_rate9, 
+                      data = df_final_full, 
+                      method = "full",
+                      distance = "glm", 
+                      link = "logit", 
+                      estimand = "att",
+                      caliper = c(pov_t6 = .25, trct_pct_pov_t6 = .25, pov_t5 = .25, trct_pct_pov_t5 = .25, vc_rate9 = 1), 
+                      std.caliper = c(TRUE, TRUE, TRUE, TRUE, TRUE),
+                      exact = ~ race)
+
+# check covariate balance 
+summary(m.out.main, addlvariables = ~ gvh1600count + bioage15_std + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
+        data = df_final_full, un = FALSE) 
+bal.tab(m.out.main,
+        addl = ~ gvh1600count + bioage15_std + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip,
+        un = FALSE,
+        disp.means = TRUE,
+        s.d.denom = "pooled",
+        data = df_final_full)
+love.plot(m.out.main, threshold = 0.10) # all covaraites balanced (all std. mean dif <.10)
+plot(m.out.main, type = "jitter", interactive = FALSE)
+plot(m.out.main, type='hist')
+plot(m.out.main, type = "density", interactive = FALSE,
+     which.xs = ~race + pov_t6 + trct_pct_pov_t6 + edu_t6)
+
+# extract matched data and weights 
+matched_data_main <- match.data(m.out.main, subclass = "subclass")
+
+## prep data for outcome regression models 
+# std exposure within treated group 
+treated_idx <- matched_data_main$gvh1600_any == 1
+mean_treated_gv <- wtd.mean(matched_data_main$gvh1600count[treated_idx], weights = matched_data_main$weights[treated_idx])
+sd_treated_gv <- sqrt(wtd.var(matched_data_main$gvh1600count[treated_idx], weights = matched_data_main$weights[treated_idx]))
+#matched_data_main$gvh1600count_att_std <- (matched_data_main$gvh1600count - mean_treated_gv) / sd_treated_gv
+matched_data_main$gvh1600cat <- as.numeric(matched_data_main$gvh1600cat)
+
+# Function to standardize variables using treated group stats
+standardize_att <- function(data, var_name, treated_idx, weights_var = "weights") {
+  # Get the variable and weights
+  var <- data[[var_name]]
+  weights <- data[[weights_var]]
+  
+  # Calculate weighted mean and SD for treated group
+  mean_treated <- wtd.mean(var[treated_idx], weights = weights[treated_idx])
+  sd_treated <- sqrt(wtd.var(var[treated_idx], weights = weights[treated_idx]))
+  
+  # Standardize the entire variable
+  standardized <- (var - mean_treated) / sd_treated
+  
+  return(standardized)
+}
+
+# Identify treated observations once
+treated_idx <- matched_data_main$gvh1600_any == 1
+
+# Apply standardization to all variables
+vars_to_standardize <- c("gvh1600count", "gvh1600cat", "pedbe15", "pedbe9",
+                         "dist_weight_count", "gvh1600_rate")
+
+for (var in vars_to_standardize) {
+  new_var_name <- paste0(var, "_att_std")
+  matched_data_main[[new_var_name]] <- standardize_att(
+    matched_data_main, 
+    var, 
+    treated_idx
+  )
+}
+
+psm_pedbe <- lm(pedbe15_att_std ~ gvh1600count_att_std + vc_rate15_std + pedbe9_att_std + age_t5 + plasmablast_t5 + cd8pcd28ncd45ran_t5 + cd8naive_t5 + age_t6 + female + momsmk + plasmablast_t6 + cd8pcd28ncd45ran_t6 + cd8naive_t6 + chip, 
+                       data=matched_data_main, 
+                       weights = weights)
+coeftest(psm_pedbe, vcov. = vcovCL, cluster = ~subclass) 
+coefci(psm_pedbe, vcov. = vcovCL, cluster = ~subclass, level = 0.95) 
+# B = 0.03975, p = 0.109, (-0.009, 0.088)
+
+
+cor(df_final_full$pedbe9_std, df_final_full$grm9_std)      # r = .36
+cor(df_final_full$pedbe15_std, df_final_full$grm15_std)    # r = .60
+
+cor(df_final_full$pedbe9_std, df_final_full$phe9_std)      # r = .05
+cor(df_final_full$pedbe15_std, df_final_full$phe15_std)    # r = .26
+
+cor(df_final_full$pedbe9_std, df_final_full$pce9)          # r = .43
+cor(df_final_full$pedbe15_std, df_final_full$pce15)        # r = .67
+
+cor(df_final_full$pedbe9_std, df_final_full$bioage9_std)   # r = .55
+cor(df_final_full$pedbe15_std, df_final_full$bioage15_std) # r = .82
+
 
